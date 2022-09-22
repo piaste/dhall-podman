@@ -1,0 +1,130 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  annotations:
+    "bind-mount-options:/var/home/hokmah/homeserver/storage/nextcloud/external": Z
+    "bind-mount-options:/var/home/hokmah/homeserver/storage/nextcloud/internal": z
+    "bind-mount-options:/var/home/hokmah/homeserver/storage/nextcloud/www.conf": Z
+    "bind-mount-options:/var/home/hokmah/homeserver/storage/postgres/backups": Z
+    "bind-mount-options:/var/home/hokmah/homeserver/storage/postgres/data": z
+    "bind-mount-options:/var/home/hokmah/homeserver/storage/postgres/init.sql": Z
+    "io.kubernetes.cri-o.TTY/kubonextcloud": 'false'
+    "io.kubernetes.cri-o.TTY/kubopostgres": 'false'
+    "io.kubernetes.cri-o.TTY/kuboredis": 'false'
+    io.podman.annotations.autoremove/kubonextcloud: 'FALSE'
+    io.podman.annotations.autoremove/kubopostgres: 'FALSE'
+    io.podman.annotations.autoremove/kuboredis: 'FALSE'
+    io.podman.annotations.init/kubonextcloud: 'FALSE'
+    io.podman.annotations.init/kubopostgres: 'FALSE'
+    io.podman.annotations.init/kuboredis: 'FALSE'
+    io.podman.annotations.privileged/kubonextcloud: 'FALSE'
+    io.podman.annotations.privileged/kubopostgres: 'FALSE'
+    io.podman.annotations.privileged/kuboredis: 'FALSE'
+    "io.podman.annotations.publish-all/kubonextcloud": 'FALSE'
+    "io.podman.annotations.publish-all/kubopostgres": 'FALSE'
+    "io.podman.annotations.publish-all/kuboredis": 'FALSE'
+  labels:
+    app: "kubonextcloud-pod"
+  name: "kubonextcloud-pod"
+spec:
+  replicas: 1
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app: "nextcloud-pod"
+  strategy:
+    rollingUpdate:
+      maxSurge: 5
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: "nextcloud-pod"
+      name: "nextcloud-pod"
+    spec:
+      containers:
+      - env:
+        - name: POSTGRES_PASSWORD
+          value: postgres
+        image: "docker.io/library/postgres:15beta4"
+        name: postgres
+        securityContext:
+          capabilities:
+            drop:
+            - CAP_MKNOD
+            - CAP_NET_RAW
+            - CAP_AUDIT_WRITE
+      - args:
+        - sh
+        - "-c"
+        - "rm -f /data/dump.rdb && redis-server --requirepass redis --maxmemory 2048mb --maxmemory-policy volatile-ttl --save ''"
+        image: "docker.io/library/redis:7"
+        name: redis
+        resources:
+          limits:
+            cpu: 500m
+            memory: 8g
+          requests:
+            cpu: 10m
+        securityContext:
+          capabilities:
+            drop:
+            - CAP_MKNOD
+            - CAP_NET_RAW
+            - CAP_AUDIT_WRITE
+      - args:
+        - "apache2-foreground"
+        image: "docker.io/library/nextcloud:24"
+        name: nextcloud
+        ports:
+        - containerPort: 80
+        securityContext:
+          capabilities:
+            drop:
+            - CAP_MKNOD
+            - CAP_NET_RAW
+            - CAP_AUDIT_WRITE
+      volumes:
+      - hostPath:
+          path: /var/home/hokmah/homeserver/storagepostgres/init.sql
+          type: File
+        name: "postgres-init.sqldocker-entrypoint-initdb.d-init.sql"
+        persistentVolumeClaim:
+          claimName: ''
+          readOnly: true
+      - hostPath:
+          path: /var/home/hokmah/homeserver/storagepostgres/data
+          type: Directory
+        name: "postgres-data-var-lib-postgresql-data"
+        persistentVolumeClaim:
+          claimName: ''
+          readOnly: false
+      - hostPath:
+          path: /var/home/hokmah/homeserver/storagepostgres/backups
+          type: Directory
+        name: "postgres-backups-backups"
+        persistentVolumeClaim:
+          claimName: ''
+          readOnly: false
+      - hostPath:
+          path: /var/home/hokmah/homeserver/storagenextcloud/www.conf
+          type: File
+        name: "nextcloud-www.conf-usr-local-etc-php-fpm.d-www.conf"
+        persistentVolumeClaim:
+          claimName: ''
+          readOnly: true
+      - hostPath:
+          path: /var/home/hokmah/homeserver/storagenextcloud/external
+          type: Directory
+        name: "nextcloud-external-external"
+        persistentVolumeClaim:
+          claimName: ''
+          readOnly: false
+      - hostPath:
+          path: /var/home/hokmah/homeserver/storagenextcloud/internal
+          type: Directory
+        name: "nextcloud-internal-var-www-html"
+        persistentVolumeClaim:
+          claimName: ''
+          readOnly: false

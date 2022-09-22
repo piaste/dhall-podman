@@ -4,3 +4,6 @@ let Prelude =
 
 
 let  x = Prelude.List.map
+
+
+let z = [] : List Integer
