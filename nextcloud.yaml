@@ -1,0 +1,145 @@
+# Save the output of this file and use kubectl create -f to import
+# it into Kubernetes.
+#
+# Created with podman-4.2.0
+
+# NOTE: If you generated this yaml from an unprivileged and rootless podman container on an SELinux
+# enabled system, check the podman generate kube man page for steps to follow to ensure that your pod/container
+# has the right permissions to access the volumes added.
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  annotations:
+    bind-mount-options:/var/home/hokmah/homeserver/storage/nextcloud/external: z
+    bind-mount-options:/var/home/hokmah/homeserver/storage/nextcloud/internal: z
+    bind-mount-options:/var/home/hokmah/homeserver/storage/nextcloud/www.conf: z
+    bind-mount-options:/var/home/hokmah/homeserver/storage/postgres: Z
+    bind-mount-options:/var/home/hokmah/homeserver/storage/postgres/data: z
+    bind-mount-options:/var/home/hokmah/homeserver/storage/postgres/init.sql: z
+    io.kubernetes.cri-o.TTY/kubonextcloud1: "false"
+    io.kubernetes.cri-o.TTY/kubopostgres1: "false"
+    io.kubernetes.cri-o.TTY/kuboredis1: "false"
+    io.podman.annotations.autoremove/kubonextcloud1: "FALSE"
+    io.podman.annotations.autoremove/kubopostgres1: "FALSE"
+    io.podman.annotations.autoremove/kuboredis1: "FALSE"
+    io.podman.annotations.init/kubonextcloud1: "FALSE"
+    io.podman.annotations.init/kubopostgres1: "FALSE"
+    io.podman.annotations.init/kuboredis1: "FALSE"
+    io.podman.annotations.privileged/kubonextcloud1: "FALSE"
+    io.podman.annotations.privileged/kubopostgres1: "FALSE"
+    io.podman.annotations.privileged/kuboredis1: "FALSE"
+    io.podman.annotations.publish-all/kubonextcloud1: "FALSE"
+    io.podman.annotations.publish-all/kubopostgres1: "FALSE"
+    io.podman.annotations.publish-all/kuboredis1: "FALSE"
+  creationTimestamp: "2022-09-09T15:41:53Z"
+  labels:
+    app: kuboredis1-pod
+  name: kuboredis1-pod
+spec:
+  containers:
+  - args:
+    - sh
+    - -c
+    - rm -f /data/dump.rdb && redis-server --requirepass redis --maxmemory 2048mb
+      --maxmemory-policy volatile-ttl --save ''
+    image: docker.io/library/redis:7
+    name: kuboredis1
+    securityContext:
+      capabilities:
+        drop:
+        - CAP_MKNOD
+        - CAP_NET_RAW
+        - CAP_AUDIT_WRITE
+    volumeMounts:
+    - mountPath: /data
+      name: 957a97b635f12d60c8319129bd8ff3dc5d5b3dce108b51a7af1128cb9e51b677-pvc
+  - args:
+    - postgres
+    env:
+    - name: POSTGRES_PASSWORD
+      value: postgres
+    - name: POSTGRES_USER
+      value: postgres
+    - name: POSTGRES_DB
+      value: postgres
+    image: docker.io/library/postgres:15beta3
+    name: kubopostgres1
+    securityContext:
+      capabilities:
+        drop:
+        - CAP_MKNOD
+        - CAP_NET_RAW
+        - CAP_AUDIT_WRITE
+    volumeMounts:
+    - mountPath: /docker-entrypoint-initdb.d/init.sql
+      name: var-home-hokmah-homeserver-storage-postgres-init.sql-host-0
+      readOnly: true
+    - mountPath: /var/lib/postgresql/data
+      name: var-home-hokmah-homeserver-storage-postgres-data-host-1
+    - mountPath: /backups
+      name: var-home-hokmah-homeserver-storage-postgres-host-2
+  - args:
+    - apache2-foreground
+    env:
+    - name: POSTGRES_PASSWORD
+      value: nextcloud
+    - name: POSTGRES_DB
+      value: nextcloud
+    - name: POSTGRES_HOST
+      value: postgres
+    - name: NEXTCLOUD_TRUSTED_DOMAINS
+      value: piaste.com piaste.it
+    - name: REDIS_HOST
+      value: redis
+    - name: REDIS_HOST_PASSWORD
+      value: redis
+    - name: POSTGRES_USER
+      value: nextcloud
+    image: docker.io/library/nextcloud:latest
+    name: kubonextcloud1
+    ports:
+    - containerPort: 80
+      hostPort: 25003
+    securityContext:
+      capabilities:
+        drop:
+        - CAP_MKNOD
+        - CAP_NET_RAW
+        - CAP_AUDIT_WRITE
+    volumeMounts:
+    - mountPath: /usr/local/etc/php-fpm.d/www.conf
+      name: var-home-hokmah-homeserver-storage-nextcloud-www.conf-host-0
+      readOnly: true
+    - mountPath: /var/www/html
+      name: var-home-hokmah-homeserver-storage-nextcloud-internal-host-1
+    - mountPath: /external
+      name: var-home-hokmah-homeserver-storage-nextcloud-external-host-2
+  volumes:
+  - name: 957a97b635f12d60c8319129bd8ff3dc5d5b3dce108b51a7af1128cb9e51b677-pvc
+    persistentVolumeClaim:
+      claimName: 957a97b635f12d60c8319129bd8ff3dc5d5b3dce108b51a7af1128cb9e51b677
+  - hostPath:
+      path: /var/home/hokmah/homeserver/storage/postgres/init.sql
+      type: File
+    name: var-home-hokmah-homeserver-storage-postgres-init.sql-host-0
+  - hostPath:
+      path: /var/home/hokmah/homeserver/storage/postgres/data
+      type: Directory
+    name: var-home-hokmah-homeserver-storage-postgres-data-host-1
+  - hostPath:
+      path: /var/home/hokmah/homeserver/storage/postgres
+      type: Directory
+    name: var-home-hokmah-homeserver-storage-postgres-host-2
+  - hostPath:
+      path: /var/home/hokmah/homeserver/storage/nextcloud/www.conf
+      type: File
+    name: var-home-hokmah-homeserver-storage-nextcloud-www.conf-host-0
+  - hostPath:
+      path: /var/home/hokmah/homeserver/storage/nextcloud/internal
+      type: Directory
+    name: var-home-hokmah-homeserver-storage-nextcloud-internal-host-1
+  - hostPath:
+      path: /var/home/hokmah/homeserver/storage/nextcloud/external
+      type: Directory
+    name: var-home-hokmah-homeserver-storage-nextcloud-external-host-2
