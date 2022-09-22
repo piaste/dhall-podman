@@ -178,8 +178,14 @@ let foo =
     -}
       {=}
 
+let KV = { mapKey : Text, mapValue : Text }
+
+let envs = \(x : List KV) -> 
+  let f = \(kv : KV) -> k8s.EnvVar::{ name = kv.mapKey, value = Some kv.mapValue } in
+  Some (Prelude.List.map KV k8s.EnvVar.Type f x)
+
 let defaultNotes = 
-  Prelude.List.concatMap Text { mapKey : Text, mapValue : Text } (\(serviceName : Text) ->   
+  Prelude.List.concatMap Text KV (\(serviceName : Text) ->   
     [     
         kv "io.podman.annotations.autoremove/${machine}${serviceName}" "FALSE"
       , kv "io.podman.annotations.init/${machine}${serviceName}" "FALSE"
@@ -192,15 +198,20 @@ let defaultNotes =
 let private = \(hostPath : Text) -> kv "bind-mount-options:${storage}/${hostPath}" "z"
 let shared  = \(hostPath : Text) -> kv "bind-mount-options:${storage}/${hostPath}" "Z"
 
-let PathType = < File | Directory >
 
-let fileMap = \(readOnly : Bool) -> \(pathType : PathType) -> \(hostPath : Text) -> \(containerPath: Text) ->
+let PathType = < File | Directory >
+let PathShareType = < Shared | Private >
+
+let V = { notes : KV, volume : k8s.Volume.Type, volumeMount : k8s.VolumeMount.Type }
+
+let fileMap = \(readOnly : Bool) -> \(pathType : PathType) -> \(pathShareType : PathShareType) -> \(hostPath : Text) -> \(containerPath: Text) ->
   let name = 
     Text/replace "/" "-" hostPath ++
     Text/replace "/" "-" containerPath
   in 
     { 
-      volume = 
+      notes = merge { Shared = shared hostPath, Private = private hostPath } pathShareType
+    , volume = 
         k8s.Volume::{ hostPath = Some
           { path = "${storage}${hostPath}"
           , type = Some (merge { File = "File", Directory = "Directory" } pathType)
@@ -216,14 +227,39 @@ let fileMap = \(readOnly : Bool) -> \(pathType : PathType) -> \(hostPath : Text)
           }
     }
 
-let volumeRO = fileMap True
-let volumeRW = fileMap False
+let configFile = fileMap True PathType.File PathShareType.Shared
+let accessFolder = fileMap True PathType.Directory PathShareType.Shared
+let ownFolder = fileMap False PathType.Directory PathShareType.Private
+let sharedFolder = fileMap False PathType.Directory PathShareType.Shared
+
+let mount = \(vs : List V) -> Some (Prelude.List.map V k8s.VolumeMount.Type (\(v : V) -> v.volumeMount) vs)
+let mountVolumes = \(vs : List V) -> Some (Prelude.List.map V k8s.Volume.Type (\(v : V) -> v.volume) vs)
+let mountNotes = \(vs : List V) -> (Prelude.List.map V KV (\(v : V) -> v.notes) vs)
 
 
-let redis = 
-    k8s.Container::{
-      , name = "${machine}redis1"
-      , image = Some "docker.io/library/redis:7"
+let nextcloudVolumes = 
+    [ 
+      configFile "/nextcloud/www.conf" "/usr/local/etc/php-fpm.d/www.conf"
+    , sharedFolder  "/nextcloud/external" "/external"
+    , ownFolder "/nextcloud/internal" "/var/www/html"
+    ]
+
+let postgresVolumes = 
+    [ 
+      configFile "/postgres/init.sql" "docker-entrypoint-initdb.d/init.sql"
+    , ownFolder "/postgres/data" "/var/lib/postgresql/data"
+    , sharedFolder  "/postgres/backups" "/backups"
+    ]
+
+let baseContainer =     
+    \(image : { repo : Text, name : Text, tag : Text}) -> k8s.Container::{      
+      name = "${machine}_${image.name}"
+    , image = Some "docker.io/${image.repo}/${image.name}:${image.tag}"
+    , securityContext= Some (k8s.SecurityContext::{ capabilities = Some { add = None (List Text), drop = Some [ "CAP_MKNOD", "CAP_NET_RAW", "CAP_AUDIT_WRITE" ]}})
+    }
+
+let redis =
+    baseContainer { name = "redis", repo = "library", tag = "7" } // {        
       , ports = Some [ k8s.ContainerPort::{ containerPort = 80 } ]
       , resources = Some
         { limits = Some (toMap { cpu = "500m" })
@@ -234,22 +270,32 @@ let redis =
         , "-c"
         , "rm -f /data/dump.rdb && redis-server --requirepass redis --maxmemory 2048mb --maxmemory-policy volatile-ttl --save ''"
         ]
-      , securityContext= Some (k8s.SecurityContext::{ capabilities = Some { add = None (List Text), drop = Some [ "CAP_MKNOD", "CAP_NET_RAW", "CAP_AUDIT_WRITE" ]}})
-      , volumeMounts =
-                Some [ k8s.VolumeMount::{ mountPath = "/docker-entrypoint-initdb.d/init.sql"
-                  , name =
-                      "var-home-hokmah-homeserver-storage-postgres-init.sql-host-0"
-                  , readOnly = Some True
-                  }
-                , k8s.VolumeMount::{ mountPath = "/var/lib/postgresql/data"
-                  , name = "var-home-hokmah-homeserver-storage-postgres-data-host-1"
-                  }
-                , k8s.VolumeMount::{ mountPath = "/backups"
-                  , name = "var-home-hokmah-homeserver-storage-postgres-host-2"
-                  }
-                ]
+    }
+
+let postgres = 
+    baseContainer { name = "postgres", repo = "library", tag = "15beta4"} // {   
+      , env = envs (toMap { POSTGRES_PASSWORD = "postgres" })
+      , volumeMounts = mount postgresVolumes
       }
       
+
+let nextcloud = 
+    baseContainer { name = "nextcloud", repo = "library", tag = "24" } // {      
+      , ports = Some [ k8s.ContainerPort::{ containerPort = 80 } ]
+      , resources = Some
+        { limits = Some (toMap { cpu = "500m" })
+        , requests = Some (toMap { cpu = "10m" })
+        }
+      , args = Some
+        [ "sh"
+        , "-c"
+        , "rm -f /data/dump.rdb && redis-server --requirepass redis --maxmemory 2048mb --maxmemory-policy volatile-ttl --save ''"
+        ]
+      , volumeMounts =
+          mount nextcloudVolumes
+      }
+
+let podName = "nextcloud-pod"
 
 in  k8s.Deployment::{
     , apiVersion = "v1"
@@ -258,43 +304,40 @@ in  k8s.Deployment::{
       , annotations = Some
         (Prelude.List.concat { mapKey : Text, mapValue : Text }
           [ 
-            [ private "nextcloud/external"
-            , private "nextcloud/internal"
-            , private "nextcloud/www.conf"
-            , shared "postgres"
-            , private "postgres/data"
-            , private "postgres/init.sql"
-            ]
+              mountNotes postgresVolumes
+            , mountNotes nextcloudVolumes            
             , defaultNotes [ "nextcloud1", "postgres1", "redis1" ]
           ]
         )
       , creationTimestamp = Some "2022-09-09T15:41:53Z"
-      , labels = Some (toMap { app = "${machine}redis1-pod" })
-      , name = Some "${machine}redis1-pod"
+      , labels = Some (toMap { app = "${machine}${podName}" })
+      , name = Some "${machine}${podName}"
       }
     , spec = Some k8s.DeploymentSpec::{
-      , replicas = Some 2
-      , revisionHistoryLimit = Some 10
-      , selector = k8s.LabelSelector::{
-        , matchLabels = Some (toMap { app = "nextcloud" })
-        }
-      , strategy = Some k8s.DeploymentStrategy::{
-        , type = Some "RollingUpdate"
-        , rollingUpdate = Some
-          { maxSurge = Some (k8s.NatOrString.Nat 5)
-          , maxUnavailable = Some (k8s.NatOrString.Nat 0)
+        , replicas = Some 2
+        , revisionHistoryLimit = Some 10
+        , selector = k8s.LabelSelector::{
+          , matchLabels = Some (toMap { app = "nextcloud" })
           }
-        }
-      , template = k8s.PodTemplateSpec::{
-        , metadata = Some k8s.ObjectMeta::{
-          , name = Some "nginx"
-          , labels = Some (toMap { app = "nginx" })
+        , strategy = Some k8s.DeploymentStrategy::{
+          , type = Some "RollingUpdate"
+          , rollingUpdate = Some
+            { maxSurge = Some (k8s.NatOrString.Nat 5)
+            , maxUnavailable = Some (k8s.NatOrString.Nat 0)
+            }
           }
-        , spec = Some k8s.PodSpec::{
-          , containers =
-            [ redis
-            ]
+        , template = k8s.PodTemplateSpec::{
+          , metadata = Some k8s.ObjectMeta::{
+            , name = Some "nginx"
+            , labels = Some (toMap { app = "nginx" })
+            }
+          , spec = Some k8s.PodSpec::{
+            , containers =
+              [ redis
+              ]
+            }
           }
         }
       }
-    }
+    
+    
