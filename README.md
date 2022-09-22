@@ -12,3 +12,8 @@ The project is built on top of [dhall-kubernetes][https://github.com/dhall-lang/
 
 **NOTE**: `dhall-kubernetes` requires at least version `1.27.0` of [the interpreter](https://github.com/dhall-lang/dhall-haskell)
 (version `11.0.0` of the language).
+
+
+## Status
+
+Work very much in progress (in particular: networking is borked)
