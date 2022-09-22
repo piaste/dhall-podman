@@ -178,11 +178,22 @@ let H =
         , sharedFolder = sharedFolder storage        
         }
 
-in  \(machineName : Text) ->
-    \(storage : Text) ->
-      { container = baseContainer
-      , deploy = baseDeployment machineName
-      , mount = H storage
+let Network = { name : Text, internal : Bool }
+
+let createNetwork = 
+  \(network: Network) -> 
+      "podman network create " ++ (if network.internal then " --internal " else " ") ++ network.name
+
+in  { 
+      initDeployment = 
+          \(machineName : Text) ->
+          \(storage : Text) ->
+          { container = baseContainer
+          , deploy = baseDeployment machineName
+          , mount = H storage
+          }
+
+      , createNetwork
       , VolumeDef = V
       , k8s
       , envs

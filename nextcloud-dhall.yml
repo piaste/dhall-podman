@@ -6,19 +6,19 @@ metadata:
     "bind-mount-options:/root/servertest/storage/nextcloud/internal": z
     "bind-mount-options:/root/servertest/storage/postgres/backups": Z
     "bind-mount-options:/root/servertest/storage/postgres/data": z
-    "io.kubernetes.cri-o.TTY/nextcloud": 'false'
+    "io.kubernetes.cri-o.TTY/nextcloud-server": 'false'
     "io.kubernetes.cri-o.TTY/postgres": 'false'
     "io.kubernetes.cri-o.TTY/redis": 'false'
-    io.podman.annotations.autoremove/nextcloud: 'FALSE'
+    "io.podman.annotations.autoremove/nextcloud-server": 'FALSE'
     io.podman.annotations.autoremove/postgres: 'FALSE'
     io.podman.annotations.autoremove/redis: 'FALSE'
-    io.podman.annotations.init/nextcloud: 'FALSE'
+    "io.podman.annotations.init/nextcloud-server": 'FALSE'
     io.podman.annotations.init/postgres: 'FALSE'
     io.podman.annotations.init/redis: 'FALSE'
-    io.podman.annotations.privileged/nextcloud: 'FALSE'
+    "io.podman.annotations.privileged/nextcloud-server": 'FALSE'
     io.podman.annotations.privileged/postgres: 'FALSE'
     io.podman.annotations.privileged/redis: 'FALSE'
-    "io.podman.annotations.publish-all/nextcloud": 'FALSE'
+    "io.podman.annotations.publish-all/nextcloud-server": 'FALSE'
     "io.podman.annotations.publish-all/postgres": 'FALSE'
     "io.podman.annotations.publish-all/redis": 'FALSE'
   labels:
@@ -74,9 +74,10 @@ spec:
       - args:
         - "apache2-foreground"
         image: "docker.io/library/nextcloud:24"
-        name: nextcloud
+        name: "nextcloud-server"
         ports:
         - containerPort: 80
+          hostPort: 8000
         securityContext:
           capabilities:
             drop:
