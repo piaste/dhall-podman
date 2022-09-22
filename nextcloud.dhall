@@ -1,55 +1,46 @@
-let Common = ./common.dhall 
-let k8s = ./gh/package.dhall sha256:705f7bd1c157c5544143ab5917bdc3972fe941300ce4189a8ea89e6ddd9c1875
+let storage = "/root/servertest/storage"
+let machineName = "p72"
 
-
-let storage = "/var/home/hokmah/homeserver/storage"
-let machine = "kubo"
-
-let C = Common machine storage
-let H = C.Helpers
+let X = ./makeDeployment.dhall machineName storage
 
 let redis =
-    { container = 
-        C.container { name = "redis", repo = "library", tag = "7" } // {    
-        , resources = Some
-          { limits = Some (toMap { cpu = "500m", memory = "8g" })
-          , requests = Some (toMap { cpu = "10m" })
-          }
-        , args = Some
-          [ "sh"
-          , "-c"
-          , "rm -f /data/dump.rdb && redis-server --requirepass redis --maxmemory 2048mb --maxmemory-policy volatile-ttl --save ''"
-          ]
+      { container =
+          X.container { name = "redis", repo = "library", tag = "7" }
+          //  { resources = Some
+                { limits = Some (toMap { cpu = "500m", memory = "8G" })
+                , requests = Some (toMap { cpu = "10m" })
+                }
+              , args = Some
+                [ "sh"
+                , "-c"
+                , "rm -f /data/dump.rdb && redis-server --requirepass redis --maxmemory 2048mb --maxmemory-policy volatile-ttl --save ''"
+                ]
+              }
+      , volumes = [] : List X.VolumeDef
       }
-    , volumes = [] : List C.VolumeDef
-    }
 
-let postgres = 
-    { container = 
-        C.container { name = "postgres", repo = "library", tag = "15beta4"} // {   
-      , env = H.envs (toMap { POSTGRES_PASSWORD = "postgres" })      
-      }
-    , volumes = [ 
-          H.configFile "postgres/init.sql" "docker-entrypoint-initdb.d/init.sql"
-        , H.ownFolder "postgres/data" "/var/lib/postgresql/data"
-        , H.sharedFolder  "postgres/backups" "/backups"
+let postgres =
+      { container =
+              X.container
+                { name = "postgres", repo = "library", tag = "15beta4" }
+          //  { env = X.envs (toMap { POSTGRES_PASSWORD = "postgres" }) }
+      , volumes =
+        [ X.mount.ownFolder "postgres/data" "/var/lib/postgresql/data"
+        , X.mount.sharedFolder "postgres/backups" "/backups"
         ]
-    }
-      
+      }
 
-let nextcloud = 
-    { container = 
-        C.container { name = "nextcloud", repo = "library", tag = "24" } // {      
-          , ports = Some [ k8s.ContainerPort::{ containerPort = 80 } ]
-          , args = Some
-            [ "apache2-foreground"
-            ]
-          }
-    , volumes = [ 
-      H.configFile "nextcloud/www.conf" "/usr/local/etc/php-fpm.d/www.conf"
-    , H.sharedFolder  "nextcloud/external" "/external"
-    , H.ownFolder "nextcloud/internal" "/var/www/html"
-    ]
-    }
+let nextcloud =
+      { container =
+              X.container { name = "nextcloud", repo = "library", tag = "24" }
+          //  { ports = Some [ X.k8s.ContainerPort::{ containerPort = 80 } ]
+              , args = Some [ "apache2-foreground" ]
+              }
+      , volumes =
+        [ -- mount.configFile "nextcloud/www.conf" "/usr/local/etc/php-fpm.d/www.conf"
+        , X.mount.sharedFolder "nextcloud/external" "/external"
+        , X.mount.ownFolder "nextcloud/internal" "/var/www/html"
+        ]
+      }
 
-in C.deployment "nextcloud-pod" [ postgres, redis, nextcloud ]
+in X.deploy "nextcloud" [ postgres, redis, nextcloud ]
