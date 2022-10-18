@@ -1,49 +1,61 @@
-let k8s =
-      ./gh/package.dhall
-        sha256:705f7bd1c157c5544143ab5917bdc3972fe941300ce4189a8ea89e6ddd9c1875
+-- Imports
+let k8s = ./gh/package.dhall sha256:705f7bd1c157c5544143ab5917bdc3972fe941300ce4189a8ea89e6ddd9c1875
 
-let P = https://prelude.dhall-lang.org/package.dhall
+let map      = https://prelude.dhall-lang.org/List/map
+let concat   = https://prelude.dhall-lang.org/List/concat
+let flatMap  = https://prelude.dhall-lang.org/List/concatMap
+let keyValue = https://prelude.dhall-lang.org/Map/keyValue Text
+let KV     = { mapKey : Text, mapValue : Text }
 
-let kv = P.Map.keyValue Text
+-- Custom types
 
-let KV = { mapKey : Text, mapValue : Text }
-
-let V =
+let Volume =
       { notes : KV
       , volume : k8s.Volume.Type
       , volumeMount : k8s.VolumeMount.Type
       }
 
-let S = { container : k8s.Container.Type, volumes : List V }
-
-let envs =
-      \(x : List KV) ->
-        let f =
-              \(kv : KV) ->
-                k8s.EnvVar::{ name = kv.mapKey, value = Some kv.mapValue }
-
-        in  Some (P.List.map KV k8s.EnvVar.Type f x)
-
-let defaultNotes =
-      P.List.concatMap
-        S
-        KV
-        ( \(service : S) ->
-            let serviceName = service.container.name
-
-            in  [ kv "io.podman.annotations.autoremove/${serviceName}" "FALSE"
-                , kv "io.podman.annotations.init/${serviceName}" "FALSE"
-                , kv "io.podman.annotations.privileged/${serviceName}" "FALSE"
-                , kv "io.podman.annotations.publish-all/${serviceName}" "FALSE"
-                , kv "io.kubernetes.cri-o.TTY/${serviceName}" "false"
-                ]
-        )
+let Service = { container : k8s.Container.Type, volumes : List Volume }
 
 let PathType = < File | Directory >
 
 let PathShareType = < Shared | Private >
 
-let fileMap =
+let Network = { name : Text, internal : Bool }
+
+-- Basic helpers
+
+let fromServices = 
+      \(T : Type) ->
+      \(selector: (Service -> List T)) ->
+      \(ss : List Service) ->
+      
+        flatMap Service T selector ss
+
+let envs =
+      \(vars : List KV) ->
+        let toEnvVar =
+              \(kv : KV) -> k8s.EnvVar::{ name = kv.mapKey, value = Some kv.mapValue }
+
+        in  Some (map KV k8s.EnvVar.Type toEnvVar vars)
+
+let defaultNotes =
+      fromServices
+        KV
+        ( \(service : Service) ->
+            let serviceName = service.container.name
+
+            in  [ keyValue "io.podman.annotations.autoremove/${serviceName}" "FALSE"
+                , keyValue "io.podman.annotations.init/${serviceName}" "FALSE"
+                , keyValue "io.podman.annotations.privileged/${serviceName}" "FALSE"
+                , keyValue "io.podman.annotations.publish-all/${serviceName}" "FALSE"
+                , keyValue "io.kubernetes.cri-o.TTY/${serviceName}" "false"
+                ]
+        )
+
+-- Storage helpers
+
+let storageMount =
       \(readOnly : Bool) ->
       \(pathType : PathType) ->
       \(pathShareType : PathShareType) ->
@@ -52,26 +64,22 @@ let fileMap =
       \(containerPath : Text) ->
         let name =
                   Text/replace "/" "-" hostPath
-              ++  "___"
+              ++  "--"
               ++  Text/replace "/" "-" containerPath
 
-        let private = kv "bind-mount-options:${storage}/${hostPath}" "z"
+        let bindMountOptions = 
+            keyValue "bind-mount-options:${storage}/${hostPath}" (merge { Shared = "Z", Private = "z" } pathShareType)
+            
+        let hostPath = 
+            { path = "${storage}/${hostPath}"
+            , type = Some ( merge { File = "File", Directory = "DirectoryOrCreate" } pathType )
+            }
 
-        let shared = kv "bind-mount-options:${storage}/${hostPath}" "Z"
-
-        in  { notes = merge { Shared = shared, Private = private } pathShareType
+        in  { notes = bindMountOptions
             , volume = k8s.Volume::{
-              , hostPath = Some
-                { path = "${storage}/${hostPath}"
-                , type = Some
-                    ( merge
-                        { File = "File", Directory = "DirectoryOrCreate" }
-                        pathType
-                    )
-                }
+              , hostPath = Some hostPath
               , name
-              , persistentVolumeClaim =
-                  None k8s.PersistentVolumeClaimVolumeSource.Type
+              , persistentVolumeClaim = None k8s.PersistentVolumeClaimVolumeSource.Type
               }
             , volumeMount = k8s.VolumeMount::{
               , mountPath = containerPath
@@ -80,33 +88,28 @@ let fileMap =
               }
             }
 
-let configFile = fileMap True PathType.File PathShareType.Shared
-
-let accessFolder = fileMap True PathType.Directory PathShareType.Shared
-
-let ownFolder = fileMap False PathType.Directory PathShareType.Private
-
-let sharedFolder = fileMap False PathType.Directory PathShareType.Shared
+let readFile = storageMount True  PathType.File      PathShareType.Shared
+let read     = storageMount True  PathType.Directory PathShareType.Shared
+let shared   = storageMount False PathType.Directory PathShareType.Shared
+let own      = storageMount False PathType.Directory PathShareType.Private
+let ownFile  = storageMount False PathType.File      PathShareType.Private
 
 let mount =
-      \(vs : List V) ->
-        Some (P.List.map V k8s.VolumeMount.Type (\(v : V) -> v.volumeMount) vs)
+      \(vs : List Volume) ->
+        Some (map Volume k8s.VolumeMount.Type (\(v : Volume) -> v.volumeMount) vs)
 
 let mountVolumes =
-      \(ss : List S) ->
-        Some
-          ( P.List.map
-              V
-              k8s.Volume.Type
-              (\(v : V) -> v.volume)
-              (P.List.concatMap S V (\(s : S) -> s.volumes) ss)
-          )
+      \(ss : List Service) ->
+        let volumes = (fromServices Volume (\(s : Service) -> s.volumes) ss)
+        in Some
+            ( map Volume k8s.Volume.Type (\(v : Volume) -> v.volume) volumes )
 
 let mountNotes =
-      P.List.concatMap
-        S
-        KV
-        (\(s : S) -> P.List.map V KV (\(v : V) -> v.notes) s.volumes)
+    fromServices KV
+      (\(s : Service) -> map Volume KV (\(v : Volume) -> v.notes) s.volumes)
+
+
+-- Service helpers
 
 let baseContainer =
       \(image : { repo : Text, name : Text, tag : Text }) ->
@@ -124,18 +127,18 @@ let baseContainer =
 let baseDeployment =
       \(machine : Text) ->
       \(podName : Text) ->
-      \(services : List S) ->
+      \(services : List Service) ->
+
         let deploymentName = "${machine}-${podName}-deployment"
 
-        in  k8s.Deployment::{
+        in k8s.Deployment::{
             , apiVersion = "v1"
             , kind = "Deployment"
             , metadata = k8s.ObjectMeta::{
               , name = Some deploymentName
               , labels = Some (toMap { app = podName })
               , annotations = Some
-                  ( P.List.concat
-                      KV
+                  ( concat KV
                       [ mountNotes services, defaultNotes services ]
                   )
               }
@@ -159,10 +162,8 @@ let baseDeployment =
                   }
                 , spec = Some k8s.PodSpec::{
                   , containers =
-                      P.List.map
-                        S
-                        k8s.Container.Type
-                        (\(s : S) -> s.container)
+                      map Service k8s.Container.Type
+                        (\(s : Service) -> s.container)
                         services
                   , volumes = mountVolumes services
                   }
@@ -170,19 +171,13 @@ let baseDeployment =
               }
             }
 
-let H =
-      \(storage : Text) ->
-        { configFile = configFile storage
-        , accessFolder = accessFolder storage
-        , ownFolder = ownFolder storage
-        , sharedFolder = sharedFolder storage        
-        }
-
-let Network = { name : Text, internal : Bool }
+-- Network management
 
 let createNetwork = 
   \(network: Network) -> 
       "podman network create " ++ (if network.internal then " --internal " else " ") ++ network.name
+
+-- Final export
 
 in  { 
       initDeployment = 
@@ -190,11 +185,18 @@ in  {
           \(storage : Text) ->
           { container = baseContainer
           , deploy = baseDeployment machineName
-          , mount = H storage
+          , mount = 
+              { readFile = readFile storage
+              , read = read storage
+              , own = own storage
+              , shared = shared storage        
+              }
           }
 
-      , createNetwork
-      , VolumeDef = V
-      , k8s
-      , envs
-      }
+    -- exported helpers
+
+    , k8s
+    , envs
+    , Volume
+    , createNetwork
+    }

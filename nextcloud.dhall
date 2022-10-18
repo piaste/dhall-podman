@@ -2,7 +2,6 @@ let storage = "/root/servertest/storage"
 let machineName = "p72"
 
 let X = ./makeDeployment.dhall
-
 let D = X.initDeployment machineName storage
 
 let redis =
@@ -18,7 +17,7 @@ let redis =
                 , "rm -f /data/dump.rdb && redis-server --requirepass redis --maxmemory 2048mb --maxmemory-policy volatile-ttl --save ''"
                 ]
               }
-      , volumes = [] : List X.VolumeDef
+      , volumes = [] : List X.Volume
       }
 
 let postgres =
@@ -27,8 +26,8 @@ let postgres =
                 { name = "postgres", repo = "library", tag = "15beta4" }
           //  { env = X.envs (toMap { POSTGRES_PASSWORD = "postgres" }) }
       , volumes =
-        [ D.mount.ownFolder "postgres/data" "/var/lib/postgresql/data"
-        , D.mount.sharedFolder "postgres/backups" "/backups"
+        [ D.mount.own "postgres/data" "/var/lib/postgresql/data"
+        , D.mount.shared "postgres/backups" "/backups"
         ]
       }
 
@@ -40,10 +39,11 @@ let nextcloud =
               , name = "nextcloud-server"
               }
       , volumes =
-        [ -- mount.configFile "nextcloud/www.conf" "/usr/local/etc/php-fpm.d/www.conf"
-        , D.mount.sharedFolder "nextcloud/external" "/external"
-        , D.mount.ownFolder "nextcloud/internal" "/var/www/html"
+        [ -- mount.readFile "nextcloud/www.conf" "/usr/local/etc/php-fpm.d/www.conf"
+        , D.mount.shared "nextcloud/external" "/external"
+        , D.mount.own "nextcloud/internal" "/var/www/html"
         ]
       }
 
-in D.deploy "nextcloud" [ postgres, redis, nextcloud ]
+in 
+      D.deploy "nextcloud" [ postgres, redis, nextcloud ]
