@@ -1,103 +1,206 @@
-apiVersion: v1
-kind: Deployment
-metadata:
-  annotations:
-    "bind-mount-options:/root/servertest/storage/nextcloud/external": Z
-    "bind-mount-options:/root/servertest/storage/nextcloud/internal": z
-    "bind-mount-options:/root/servertest/storage/postgres/backups": Z
-    "bind-mount-options:/root/servertest/storage/postgres/data": z
-    "io.kubernetes.cri-o.TTY/nextcloud-server": 'false'
-    "io.kubernetes.cri-o.TTY/postgres": 'false'
-    "io.kubernetes.cri-o.TTY/redis": 'false'
-    "io.podman.annotations.autoremove/nextcloud-server": 'FALSE'
-    io.podman.annotations.autoremove/postgres: 'FALSE'
-    io.podman.annotations.autoremove/redis: 'FALSE'
-    "io.podman.annotations.init/nextcloud-server": 'FALSE'
-    io.podman.annotations.init/postgres: 'FALSE'
-    io.podman.annotations.init/redis: 'FALSE'
-    "io.podman.annotations.privileged/nextcloud-server": 'FALSE'
-    io.podman.annotations.privileged/postgres: 'FALSE'
-    io.podman.annotations.privileged/redis: 'FALSE'
-    "io.podman.annotations.publish-all/nextcloud-server": 'FALSE'
-    "io.podman.annotations.publish-all/postgres": 'FALSE'
-    "io.podman.annotations.publish-all/redis": 'FALSE'
-  labels:
-    app: nextcloud
-  name: "p72-nextcloud-deployment"
-spec:
-  replicas: 1
-  revisionHistoryLimit: 5
-  selector:
-    matchLabels:
+- apiVersion: v1
+  kind: Deployment
+  metadata:
+    annotations:
+      "bind-mount-options:/home/hokmah//servertest/storage/nextcloud/external": Z
+      "bind-mount-options:/home/hokmah//servertest/storage/nextcloud/internal": z
+      "bind-mount-options:/home/hokmah//servertest/storage/postgres/backups": Z
+      "bind-mount-options:/home/hokmah//servertest/storage/postgres/data": z
+      "io.kubernetes.cri-o.TTY/nextcloud-server": 'false'
+      "io.kubernetes.cri-o.TTY/postgres": 'false'
+      "io.kubernetes.cri-o.TTY/redis": 'false'
+      "io.podman.annotations.autoremove/nextcloud-server": 'FALSE'
+      io.podman.annotations.autoremove/postgres: 'FALSE'
+      io.podman.annotations.autoremove/redis: 'FALSE'
+      "io.podman.annotations.init/nextcloud-server": 'FALSE'
+      io.podman.annotations.init/postgres: 'FALSE'
+      io.podman.annotations.init/redis: 'FALSE'
+      "io.podman.annotations.privileged/nextcloud-server": 'FALSE'
+      io.podman.annotations.privileged/postgres: 'FALSE'
+      io.podman.annotations.privileged/redis: 'FALSE'
+      "io.podman.annotations.publish-all/nextcloud-server": 'FALSE'
+      "io.podman.annotations.publish-all/postgres": 'FALSE'
+      "io.podman.annotations.publish-all/redis": 'FALSE'
+    labels:
       app: nextcloud
-  strategy:
-    rollingUpdate:
-      maxSurge: 5
-      maxUnavailable: 0
-    type: RollingUpdate
-  template:
-    metadata:
-      labels:
+    name: "p72-nextcloud-deployment"
+  spec:
+    replicas: 1
+    revisionHistoryLimit: 5
+    selector:
+      matchLabels:
         app: nextcloud
-      name: nextcloud
-    spec:
-      containers:
-      - env:
-        - name: POSTGRES_PASSWORD
-          value: postgres
-        image: "docker.io/library/postgres:15beta4"
-        name: postgres
-        securityContext:
-          capabilities:
-            drop:
-            - CAP_MKNOD
-            - CAP_NET_RAW
-            - CAP_AUDIT_WRITE
-      - args:
-        - sh
-        - "-c"
-        - "rm -f /data/dump.rdb && redis-server --requirepass redis --maxmemory 2048mb --maxmemory-policy volatile-ttl --save ''"
-        image: "docker.io/library/redis:7"
-        name: redis
-        resources:
-          limits:
-            cpu: 500m
-            memory: 8G
-          requests:
-            cpu: 10m
-        securityContext:
-          capabilities:
-            drop:
-            - CAP_MKNOD
-            - CAP_NET_RAW
-            - CAP_AUDIT_WRITE
-      - args:
-        - "apache2-foreground"
-        image: "docker.io/library/nextcloud:24"
-        name: "nextcloud-server"
-        ports:
-        - containerPort: 80
-          hostPort: 8000
-        securityContext:
-          capabilities:
-            drop:
-            - CAP_MKNOD
-            - CAP_NET_RAW
-            - CAP_AUDIT_WRITE
-      volumes:
-      - hostPath:
-          path: /root/servertest/storage/postgres/data
-          type: DirectoryOrCreate
-        name: "postgres-data___-var-lib-postgresql-data"
-      - hostPath:
-          path: /root/servertest/storage/postgres/backups
-          type: DirectoryOrCreate
-        name: "postgres-backups___-backups"
-      - hostPath:
-          path: /root/servertest/storage/nextcloud/external
-          type: DirectoryOrCreate
-        name: "nextcloud-external___-external"
-      - hostPath:
-          path: /root/servertest/storage/nextcloud/internal
-          type: DirectoryOrCreate
-        name: "nextcloud-internal___-var-www-html"
+    strategy:
+      rollingUpdate:
+        maxSurge: 5
+        maxUnavailable: 0
+      type: RollingUpdate
+    template:
+      metadata:
+        labels:
+          app: nextcloud
+        name: nextcloud
+      spec:
+        containers:
+        - env:
+          - name: POSTGRES_PASSWORD
+            value: postgres
+          image: "docker.io/library/postgres:15"
+          name: postgres
+          securityContext:
+            capabilities:
+              drop:
+              - CAP_MKNOD
+              - CAP_NET_RAW
+              - CAP_AUDIT_WRITE
+        - args:
+          - sh
+          - "-c"
+          - "rm -f /data/dump.rdb && redis-server --requirepass redis --maxmemory 2048mb --maxmemory-policy volatile-ttl --save ''"
+          image: "docker.io/library/redis:7"
+          name: redis
+          resources:
+            limits:
+              cpu: 500m
+              memory: 8G
+            requests:
+              cpu: 10m
+          securityContext:
+            capabilities:
+              drop:
+              - CAP_MKNOD
+              - CAP_NET_RAW
+              - CAP_AUDIT_WRITE
+        - args:
+          - "apache2-foreground"
+          image: "docker.io/library/nextcloud:24"
+          name: "nextcloud-server"
+          ports:
+          - containerPort: 80
+            hostPort: 8000
+          securityContext:
+            capabilities:
+              drop:
+              - CAP_MKNOD
+              - CAP_NET_RAW
+              - CAP_AUDIT_WRITE
+        volumes:
+        - hostPath:
+            path: /home/hokmah//servertest/storage/postgres/data
+            type: DirectoryOrCreate
+          name: "postgres-data---var-lib-postgresql-data"
+        - hostPath:
+            path: /home/hokmah//servertest/storage/postgres/backups
+            type: DirectoryOrCreate
+          name: "postgres-backups---backups"
+        - hostPath:
+            path: /home/hokmah//servertest/storage/nextcloud/external
+            type: DirectoryOrCreate
+          name: "nextcloud-external---external"
+        - hostPath:
+            path: /home/hokmah//servertest/storage/nextcloud/internal
+            type: DirectoryOrCreate
+          name: "nextcloud-internal---var-www-html"
+- apiVersion: v1
+  kind: Deployment
+  metadata:
+    annotations:
+      "bind-mount-options:/home/hokmah//servertest/storage/nextcloud/external": Z
+      "bind-mount-options:/home/hokmah//servertest/storage/nextcloud/internal": z
+      "bind-mount-options:/home/hokmah//servertest/storage/postgres/backups": Z
+      "bind-mount-options:/home/hokmah//servertest/storage/postgres/data": z
+      "io.kubernetes.cri-o.TTY/nextcloud-server": 'false'
+      "io.kubernetes.cri-o.TTY/postgres": 'false'
+      "io.kubernetes.cri-o.TTY/redis": 'false'
+      "io.podman.annotations.autoremove/nextcloud-server": 'FALSE'
+      io.podman.annotations.autoremove/postgres: 'FALSE'
+      io.podman.annotations.autoremove/redis: 'FALSE'
+      "io.podman.annotations.init/nextcloud-server": 'FALSE'
+      io.podman.annotations.init/postgres: 'FALSE'
+      io.podman.annotations.init/redis: 'FALSE'
+      "io.podman.annotations.privileged/nextcloud-server": 'FALSE'
+      io.podman.annotations.privileged/postgres: 'FALSE'
+      io.podman.annotations.privileged/redis: 'FALSE'
+      "io.podman.annotations.publish-all/nextcloud-server": 'FALSE'
+      "io.podman.annotations.publish-all/postgres": 'FALSE'
+      "io.podman.annotations.publish-all/redis": 'FALSE'
+    labels:
+      app: nextcloud2
+    name: "p72-nextcloud2-deployment"
+  spec:
+    replicas: 1
+    revisionHistoryLimit: 5
+    selector:
+      matchLabels:
+        app: nextcloud2
+    strategy:
+      rollingUpdate:
+        maxSurge: 5
+        maxUnavailable: 0
+      type: RollingUpdate
+    template:
+      metadata:
+        labels:
+          app: nextcloud2
+        name: nextcloud2
+      spec:
+        containers:
+        - env:
+          - name: POSTGRES_PASSWORD
+            value: postgres
+          image: "docker.io/library/postgres:15"
+          name: postgres
+          securityContext:
+            capabilities:
+              drop:
+              - CAP_MKNOD
+              - CAP_NET_RAW
+              - CAP_AUDIT_WRITE
+        - args:
+          - sh
+          - "-c"
+          - "rm -f /data/dump.rdb && redis-server --requirepass redis --maxmemory 2048mb --maxmemory-policy volatile-ttl --save ''"
+          image: "docker.io/library/redis:7"
+          name: redis
+          resources:
+            limits:
+              cpu: 500m
+              memory: 8G
+            requests:
+              cpu: 10m
+          securityContext:
+            capabilities:
+              drop:
+              - CAP_MKNOD
+              - CAP_NET_RAW
+              - CAP_AUDIT_WRITE
+        - args:
+          - "apache2-foreground"
+          image: "docker.io/library/nextcloud:24"
+          name: "nextcloud-server"
+          ports:
+          - containerPort: 80
+            hostPort: 8000
+          securityContext:
+            capabilities:
+              drop:
+              - CAP_MKNOD
+              - CAP_NET_RAW
+              - CAP_AUDIT_WRITE
+        volumes:
+        - hostPath:
+            path: /home/hokmah//servertest/storage/postgres/data
+            type: DirectoryOrCreate
+          name: "postgres-data---var-lib-postgresql-data"
+        - hostPath:
+            path: /home/hokmah//servertest/storage/postgres/backups
+            type: DirectoryOrCreate
+          name: "postgres-backups---backups"
+        - hostPath:
+            path: /home/hokmah//servertest/storage/nextcloud/external
+            type: DirectoryOrCreate
+          name: "nextcloud-external---external"
+        - hostPath:
+            path: /home/hokmah//servertest/storage/nextcloud/internal
+            type: DirectoryOrCreate
+          name: "nextcloud-internal---var-www-html"

@@ -1,14 +1,17 @@
 -- Imports
 let k8s = ./gh/package.dhall sha256:705f7bd1c157c5544143ab5917bdc3972fe941300ce4189a8ea89e6ddd9c1875
 
-let map      = https://prelude.dhall-lang.org/List/map
-let concat   = https://prelude.dhall-lang.org/List/concat
-let flatMap  = https://prelude.dhall-lang.org/List/concatMap
-let keyValue = https://prelude.dhall-lang.org/Map/keyValue Text
+let map           = https://prelude.dhall-lang.org/List/map
+let Map           = https://prelude.dhall-lang.org/Map/Type
+let concat        = https://prelude.dhall-lang.org/List/concat
+let flatMap       = https://prelude.dhall-lang.org/List/concatMap
+let keyValue      = https://prelude.dhall-lang.org/Map/keyValue Text
+let textConcatSep = https://prelude.dhall-lang.org/Text/concatSep
 let KV     = { mapKey : Text, mapValue : Text }
 
 -- Custom types
 
+let Network = { name : Text, internal : Bool }
 let Volume =
       { notes : KV
       , volume : k8s.Volume.Type
@@ -21,7 +24,11 @@ let PathType = < File | Directory >
 
 let PathShareType = < Shared | Private >
 
-let Network = { name : Text, internal : Bool }
+let DeploymentUnit = 
+  { pod : k8s.Deployment.Type
+  , name : Text
+  , networkNames : List Text
+  , networkCreationScripts : List Text }
 
 -- Basic helpers
 
@@ -109,29 +116,50 @@ let mountNotes =
       (\(s : Service) -> map Volume KV (\(v : Volume) -> v.notes) s.volumes)
 
 
+-- Network management
+
+
+let createNetwork =
+      (\(network: Network ) -> 
+        "podman network create " ++ (if network.internal then " --internal " else " ") ++ network.name
+      )
+
+let createNetworks =
+    map ({ mapKey: Text, mapValue : Network }) Text
+      (\(network: { mapKey: Text, mapValue : Network }) -> createNetwork network.mapValue
+      )
+
 -- Service helpers
+let Image =
+      { Type = { registry : Text, repo : Text, name : Text, tag : Text }
+      , default = { registry = "docker.io",  repo = "library", tag = "latest" }
+      }
 
 let baseContainer =
-      \(image : { repo : Text, name : Text, tag : Text }) ->
+      \(image : Image.Type) ->
+
         k8s.Container::{
         , name = "${image.name}"
-        , image = Some "docker.io/${image.repo}/${image.name}:${image.tag}"
+        , image = Some "${image.registry}/${image.repo}/${image.name}:${image.tag}"
         , securityContext = Some k8s.SecurityContext::{
           , capabilities = Some
             { add = None (List Text)
             , drop = Some [ "CAP_MKNOD", "CAP_NET_RAW", "CAP_AUDIT_WRITE" ]
             }
           }
+        , ports = None (List k8s.ContainerPort.Type)
         }
 
 let baseDeployment =
       \(machine : Text) ->
       \(podName : Text) ->
+      \(networks: List Network) ->
       \(services : List Service) ->
 
         let deploymentName = "${machine}-${podName}-deployment"
 
-        in k8s.Deployment::{
+        let deployment = 
+           k8s.Deployment::{
             , apiVersion = "v1"
             , kind = "Deployment"
             , metadata = k8s.ObjectMeta::{
@@ -171,11 +199,13 @@ let baseDeployment =
               }
             }
 
--- Network management
-
-let createNetwork = 
-  \(network: Network) -> 
-      "podman network create " ++ (if network.internal then " --internal " else " ") ++ network.name
+          in 
+          {
+            pod = deployment
+          , name = "${machine}-${podName}"
+          , networkNames = map Network Text (\(n: Network) -> n.name) networks
+          , networkCreationScripts = map Network Text createNetwork networks
+          }
 
 -- Final export
 
@@ -195,8 +225,18 @@ in  {
 
     -- exported helpers
 
-    , k8s
+    , concat  
+    , map 
+    , flatMap
+    , textConcatSep
+    , keyValue
+    , KV
     , envs
+
+    , k8s
     , Volume
-    , createNetwork
+    , Network
+    , Image
+    , DeploymentUnit
+    
     }
